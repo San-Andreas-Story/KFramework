@@ -4,7 +4,7 @@
 
 Il fournit une base complète de gestion pour un serveur RP : personnages, items, jobs, gangs, et un système d'**exports** permettant à d'autres ressources d'interagir facilement avec le framework.
 
-> ⚠️ Ce framework reprend le **core et les composants de base** du projet [flashlandv8_gamemode](https://github.com/pablo-1610/flashlandv8_gamemode) (par Pablo1610 & VibR1cY), largement retravaillés et étendus depuis.
+> ⚠️ Ce framework reprend le **core et les composants de base** du projet [flashlandv8_gamemode](https://github.com/pablo-1610/flashlandv8_gamemode), largement retravaillés et étendus depuis.
 
 ---
 
