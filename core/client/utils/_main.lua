@@ -1,0 +1,1 @@
+KFramework.Client.Utils = {}
