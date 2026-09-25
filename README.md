@@ -94,8 +94,6 @@ KFramework/
 
 ## Origine & Crédits
 
-KFramework reprend le **core** et la **base des components** du projet **FlashLand V8 Gamemode**
-
 Le projet d'origine a été publié en accès libre par ses auteurs sous licence **GPL-3.0**.
 
 Depuis cette base, KFramework a été **significativement retravaillé**, notamment via l'ajout d'un **système d'exports** permettant l'interopérabilité avec d'autres ressources, absent du projet original.
