@@ -114,4 +114,4 @@ Points clés à retenir :
 
 ## Avertissement
 
-Ni les auteurs originaux de flashlandv8_gamemode, ni les mainteneurs de KFramework, ne sont responsables de l'usage qui sera fait de ce framework, ni des problèmes rencontrés lors de son utilisation.
+Les mainteneurs de KFramework, ne sont responsables de l'usage qui sera fait de ce framework, ni des problèmes rencontrés lors de son utilisation.
