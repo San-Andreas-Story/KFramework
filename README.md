@@ -4,8 +4,6 @@
 
 Il fournit une base complète de gestion pour un serveur RP : personnages, items, jobs, gangs, et un système d'**exports** permettant à d'autres ressources d'interagir facilement avec le framework.
 
-> ⚠️ Ce framework reprend le **core et les composants de base** du projet [flashlandv8_gamemode](https://github.com/pablo-1610/flashlandv8_gamemode), largement retravaillés et étendus depuis.
-
 ---
 
 ## ✨ Fonctionnalités
@@ -113,8 +111,6 @@ Points clés à retenir :
 - Vous pouvez utiliser, modifier et redistribuer ce code librement.
 - **Toute modification distribuée ou exploitée via un réseau (y compris un serveur FiveM public)** doit voir son code source rendu disponible aux utilisateurs qui interagissent avec, sous la même licence.
 - Aucune garantie n'est fournie ("tel quel").
-
-ℹ️ Le projet d'origine (flashlandv8_gamemode) étant sous **GPL-3.0**, et l'AGPL-3.0 étant explicitement conçue pour être compatible avec la GPL-3.0 (voir section 13 de l'AGPL), la republication de ce fork sous AGPL-3.0 est cohérente d'un point de vue licence.
 
 ---
 
