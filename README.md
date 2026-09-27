@@ -4,8 +4,6 @@
 
 Il fournit une base complète de gestion pour un serveur RP : personnages, items, jobs, gangs, et un système d'**exports** permettant à d'autres ressources d'interagir facilement avec le framework.
 
-> ⚠️ Ce framework reprend le **core et les composants de base** du projet [flashlandv8_gamemode](https://github.com/pablo-1610/flashlandv8_gamemode), largement retravaillés et étendus depuis.
-
 ---
 
 ## ✨ Fonctionnalités
@@ -96,8 +94,6 @@ KFramework/
 
 ## Origine & Crédits
 
-KFramework reprend le **core** et la **base des components** du projet **FlashLand V8 Gamemode**
-
 Le projet d'origine a été publié en accès libre par ses auteurs sous licence **GPL-3.0**.
 
 Depuis cette base, KFramework a été **significativement retravaillé**, notamment via l'ajout d'un **système d'exports** permettant l'interopérabilité avec d'autres ressources, absent du projet original.
@@ -114,10 +110,8 @@ Points clés à retenir :
 - **Toute modification distribuée ou exploitée via un réseau (y compris un serveur FiveM public)** doit voir son code source rendu disponible aux utilisateurs qui interagissent avec, sous la même licence.
 - Aucune garantie n'est fournie ("tel quel").
 
-ℹ️ Le projet d'origine (flashlandv8_gamemode) étant sous **GPL-3.0**, et l'AGPL-3.0 étant explicitement conçue pour être compatible avec la GPL-3.0 (voir section 13 de l'AGPL), la republication de ce fork sous AGPL-3.0 est cohérente d'un point de vue licence.
-
 ---
 
 ## Avertissement
 
-Ni les auteurs originaux de flashlandv8_gamemode, ni les mainteneurs de KFramework, ne sont responsables de l'usage qui sera fait de ce framework, ni des problèmes rencontrés lors de son utilisation.
+Les mainteneurs de KFramework, ne sont responsables de l'usage qui sera fait de ce framework, ni des problèmes rencontrés lors de son utilisation.
