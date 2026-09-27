@@ -23,6 +23,7 @@ setmetatable(_Player, {
         self.name = data.name
         self.position = data.position
         self.metadata = data.metadata
+        self.appearance = data.appearance
         self.loaded = data.loaded == true
         self.saving = false
         return self
@@ -89,6 +90,20 @@ function _Player:getMeta(key)
 
 end
 
+--- Définit l'apparence complète du personnage (table renvoyée par skinchanger:getSkin).
+---@param appearance table
+---@return void
+function _Player:setAppearance(appearance)
+    if type(appearance) ~= "table" then return end
+    self.appearance = appearance
+end
+ 
+--- Récupère l'apparence actuelle du personnage.
+---@return table|nil
+function _Player:getAppearance()
+    return self.appearance
+end
+
 --- Pose un verrou indiquant qu'une sauvegarde est en cours sur ce personnage.
 --- Sert à éviter un enregistrement concurrent (ex: une sauvegarde périodique et une déconnexion qui se chevauchent).
 ---@return boolean `true` si le verrou a été posé avec succès, `false` s'il était déjà posé (l'appelant doit alors annuler ou reporter sa sauvegarde).
@@ -115,6 +130,7 @@ function _Player:snapshot()
         position = self.position,
         loaded = self.loaded,
         metadata = self.metadata,
+        appearance = self.appearance,
     }
 
 end
@@ -128,6 +144,7 @@ function _Player:toDB()
         name = self.name,
         position = self.position and json.encode(self.position) or nil,
         metadata = self.metadata and json.encode(self.metadata) or nil,
+        appearance = self.appearance and json.encode(self.appearance) or nil,
     }
 
 end
@@ -145,6 +162,7 @@ function _Player.fromDB(row)
         name = row.name,
         position = row.position and json.decode(row.position) or nil,
         metadata = row.metadata and json.decode(row.metadata) or nil,
+        appearance = row.appearance and json.decode(row.appearance) or nil,
         loaded = false,
     }
 
@@ -159,5 +177,6 @@ function _Player:resetCharacter()
     self.name = nil
     self.position = nil
     self.metadata = nil
+    self.appearance = nil
     self.loaded = false
 end

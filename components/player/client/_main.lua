@@ -65,6 +65,15 @@ end)
 ---@return void
 KFramework.Client.Players.openCharacterCreator = function(data)
     KFramework.logDev("openCharacterCreator appelé — TODO: brancher ton UI ici.")
+    KFramework.toInternal('skinchanger:loadDefaultModel', true)
+end
+
+KFramework.Client.Players.getAppearanceOptions = function(cb)
+    KFramework.toInternal('skinchanger:getData', cb)
+end
+
+KFramework.Client.Players.setAppearanceValue = function(key, value)
+    KFramework.toInternal('skinchanger:change', key, value)
 end
 
 --- Envoie au serveur les données du personnage saisies par le joueur dans le character creator, pour validation
@@ -73,8 +82,16 @@ end
 ---@return void
 KFramework.Client.Players.submitCharacterCreator = function(data)
     if type(data) ~= "table" then return end
-    TriggerServerEvent("Players:finishCharacterCreator", data)
-
+ 
+    if data.appearance == nil then
+        KFramework.toInternal('skinchanger:getSkin', function(skin)
+            data.appearance = skin
+            KFramework.toServer("Players:finishCharacterCreator", data)
+        end)
+        return
+    end
+ 
+    KFramework.toServer("Players:finishCharacterCreator", data)
 end
 
 --- Récupère le nom du personnage du joueur local.
@@ -94,7 +111,7 @@ KFramework.Client.Players.getMeta = function(key)
     return character.metadata[key]
 end
 
-RegisterNetEvent("Player:openCharacterCreator", function(data)
+KFramework.toInternal("Player:openCharacterCreator", function(data)
     KFramework.Client.Players.openCharacterCreator(data or {})
 end)
 

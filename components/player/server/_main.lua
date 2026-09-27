@@ -53,14 +53,13 @@ KFramework.Server.Players.getAll = function()
 
 end
 
---- Recherche un personnage existant en base de données pour ce joueur : le charge s'il existe, sinon déclenche
---- l'ouverture du character creator côté client via `startCharacterCreator`.
+--- Recherche un personnage existant en base de données pour ce joueur : le charge s'il existe, sinon
+--- déclenche l'ouverture du character creator côté client via `startCharacterCreator`.
 ---@param source number Le Server ID du joueur concerné.
 ---@return void
 KFramework.Server.Players.loadCharacter = function(source)
-
     source = tonumber(source)
-    local player = players[source]
+    local player = KFramework.Server.Players._registry[source]
 
     if not player then
         KFramework.logDev(("loadCharacter: aucun _Player enregistré pour la source %s."):format(source))
@@ -70,22 +69,28 @@ KFramework.Server.Players.loadCharacter = function(source)
     KFramework.Server.Database.query('SELECT * FROM kf_characters WHERE identifier = ? LIMIT 1', { player.identifier }, function(row)
         if not KFramework.Server.Utils.isConnected(source) then return end
 
-        local row = rows and rows[1]
+        -- BUG corrigé : le callback reçoit directement `row` (déjà la 1ère ligne, ou nil).
+        -- L'ancien code lisait une variable `rows` inexistante ; `row` valait donc toujours nil
+        -- et renvoyait TOUS les joueurs vers le character creator à chaque connexion, même ceux
+        -- ayant déjà un personnage.
         if not row then
             KFramework.Server.Players.startCharacterCreator(source)
             return
         end
-    
-        local opts = _Player.fromDB(row)
 
         local opts = _Player.fromDB(row)
         opts.source = source
         opts.loaded = true
-        players[source] = _Player(opts)
-        syncState(source, players[source])
+
+        local loadedPlayer = _Player(opts)
+        KFramework.Server.Players._registry[source] = loadedPlayer
+        KFramework.Server.Players.syncState(source, loadedPlayer)
 
         KFramework.logDev(("Personnage chargé pour la source %s (charId %s)."):format(source, tostring(opts.charId)))
-        KFramework.toInternal("Player:loaded", source, players[source]:snapshot())
+        KFramework.toInternal("Player:loaded", source, loadedPlayer:snapshot())
+
+        -- Réapplique l'apparence sauvegardée côté client (voir applyAppearance ci-dessus).
+        KFramework.Server.Players.applyAppearance(source, loadedPlayer.appearance)
     end)
 end
 
@@ -95,7 +100,7 @@ end
 KFramework.Server.Players.startCharacterCreator = function(source)
     source = tonumber(source)
     if not KFramework.Server.Utils.isConnected(source) then return end
-    TriggerClientEvent("Player:openCharacterCreator", source)
+    KFramework.toClient("Player:openCharacterCreator", source)
 end
 
 --- Réceptionne les données validées par le joueur dans le character creator, crée le personnage correspondant en
@@ -105,17 +110,24 @@ end
 ---@return boolean `true` si le personnage a été créé et chargé avec succès, sinon `false`.
 KFramework.Server.Players.finishCharacterCreator = function(source, data)
     source = tonumber(source)
-    local player = players[source]
+    local player = KFramework.Server.Players._registry[source]
     if not player or type(data) ~= "table" then return false end
+ 
+    if player:isLoaded() or KFramework.Server.Players._creating[source] then
+        KFramework.Error(("Tentative de (re)création d'un personnage déjà chargé ou en cours de création pour la source %s."):format(source))
+        return false
+    end
+    KFramework.Server.Players._creating[source] = true
  
     local identifier = player.identifier
     local positionJson = data.position and json.encode(data.position) or nil
     local metadataJson = data.metadata and json.encode(data.metadata) or nil
+    local appearanceJson = data.appearance and json.encode(data.appearance) or nil
  
-    KFramework.Server.Database.insert('INSERT INTO kf_characters (identifier, name, position, metadata) VALUES (?, ?, ?, ?)',
-        { identifier, data.name, positionJson, metadataJson },
+    KFramework.Server.Database.insert('INSERT INTO kf_characters (identifier, name, position, metadata, appearance) VALUES (?, ?, ?, ?, ?)',
+        { identifier, data.name, positionJson, metadataJson, appearanceJson },
         function(insertId)
-            creatingCharacter[source] = nil
+            KFramework.Server.Players._creating[source] = nil
             if not KFramework.Server.Utils.isConnected(source) then return end
  
             if not insertId then
@@ -123,24 +135,38 @@ KFramework.Server.Players.finishCharacterCreator = function(source, data)
                 return
             end
  
-            players[source] = _Player({
+            local newPlayer = _Player({
                 source = source,
                 identifier = identifier,
                 charId = insertId,
                 name = data.name,
                 position = data.position,
                 metadata = data.metadata,
+                appearance = data.appearance,
                 loaded = true,
             })
-            syncState(source, players[source])
+            KFramework.Server.Players._registry[source] = newPlayer
+            KFramework.Server.Players.syncState(source, newPlayer)
  
             KFramework.logDev(("Personnage créé pour la source %s (charId %s)."):format(source, insertId))
-            KFramework.toInternal("Player:loaded", source, players[source]:snapshot())
+            KFramework.toInternal("Player:loaded", source, newPlayer:snapshot())
         end)
  
     return true
 end
 
+--- Renvoie au client l'apparence sauvegardée d'un personnage, afin que le skinchanger la réapplique.
+--- Utile à la connexion : rien côté client ne persiste l'apparence entre deux sessions, donc sans
+--- cet appel le joueur réapparaîtrait avec le ped par défaut à chaque reconnexion.
+---@param source number Le Server ID du joueur concerné.
+---@param appearance table|nil Les données d'apparence renvoyées par skinchanger:getSkin.
+---@return void
+KFramework.Server.Players.applyAppearance = function(source, appearance)
+    if not appearance then return end
+    source = tonumber(source)
+    if not KFramework.Server.Utils.isConnected(source) then return end
+    KFramework.toClient("skinchanger:loadSkin", source, appearance)
+end
 
 --- Sauvegarde en base de données les données actuelles du personnage d'un joueur.
 ---@param source number Le Server ID du joueur concerné.
@@ -171,7 +197,7 @@ end
 ---@return number Le nombre de personnages sauvegardés avec succès.
 KFramework.Server.Players.saveAllPlayers = function()
     local count = 0
-    for source in pairs(players) do
+    for source in pairs(KFramework.Server.Players._registry) do
         if KFramework.Server.Players.saveCharacter(source) then
             count = count + 1
         end
@@ -204,7 +230,7 @@ KFramework.Server.Players.getMeta = function(source, key)
     return player:getMeta(key)
 end
 
-RegisterNetEvent("Players:finishCharacterCreator", function(data)
+KFramework.toInternal("Players:finishCharacterCreator", function(data)
     local source = tonumber(source)
     local player = players[source]
     if not player then return end
@@ -233,7 +259,7 @@ AddEventHandler("playerJoining", function()
         return
     end
  
-    players[source] = _Player({ source = source, identifier = identifier, loaded = false })
+    KFramework.Server.Players._registry[source] = _Player({ source = source, identifier = identifier, loaded = false })
     KFramework.Server.Players.loadCharacter(source)
 end)
 
@@ -243,15 +269,15 @@ end)
 ---@return void
 AddEventHandler("playerDropped", function(reason)
     local source = tonumber(source)
-    creatingCharacter[source] = nil
-    local player = players[source]
+    KFramework.Server.Players._creating[source] = nil
+    local player = KFramework.Server.Players._registry[source]
     if not player then return end
  
     if player:isLoaded() then
         KFramework.Server.Players.saveCharacter(source)
     end
  
-    players[source] = nil
+    KFramework.Server.Players._registry[source] = nil
 end)
 
 --- Boucle de sauvegarde périodique : appelle `saveAllPlayers` à intervalle régulier, afin de limiter la perte de
