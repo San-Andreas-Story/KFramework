@@ -1,3 +1,4 @@
 _Config = {
-    Prefix = "KFramework",
+    prefix = "^6[KFramework]^7",
+    environment = 'DEV',
 }

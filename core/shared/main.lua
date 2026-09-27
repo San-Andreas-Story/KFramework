@@ -92,7 +92,7 @@ end
 ---@param stringValue string Le message à afficher dans les logs.
 KFramework.logDev = function(stringValue)
     if (_Config.environment == "DEV") then 
-        print(("%s %s^7"):format(_Config.prefix, stringValue))
+        print(("%s : %s^7"):format(_Config.prefix, stringValue))
     end
 end
 
@@ -125,11 +125,11 @@ end
 --- (G - Core/Shared) Journalise le chargement d'un composant du framework en mode développement.
 ---@param id string L'identifiant ou le nom du composant chargé.
 KFramework.loadedComponent = function(id)
-    KFramework.logDev(("Chargement du composant ^6>^5 %s"):format(id))
+    KFramework.logDev(("Chargement du composant ^6-->^5 %s^7"):format(id))
 end
 
 --- (G - Core/Shared) Journalise le chargement d'un addon externe ou module additionnel en mode développement.
 ---@param id string L'identifiant ou le nom de l'addon chargé.
 KFramework.loadedAddon = function(id)
-    KFramework.logDev(("Chargement de l'addon ^6>^4 %s"):format(id))
+    KFramework.logDev(("Chargement de l'addon ^6-->^4 %s^7"):format(id))
 end

@@ -14,7 +14,7 @@ local function safeParameters(params)
     return params
 end
 
----Execute une requete SQL de modification/mise a jour (UPDATE, DELETE).
+--- (G - Core/Server) Execute une requete SQL de modification/mise a jour (UPDATE, DELETE).
 ---@param query string La requete SQL a executer.
 ---@param params table|nil Les parametres d'injection de la requete.
 ---@param func function|nil La fonction de rappel (callback) executee une fois la requete terminee.
@@ -23,7 +23,7 @@ KFramework.Server.Database.execute = function(query, params, func)
     exports[GetCurrentResourceName()]:mysql_execute(query, safeParameters(params), func)
 end
 
----Execute une requete SQL de lecture (SELECT) et retourne le resultat.
+--- (G - Core/Server) Execute une requete SQL de lecture (SELECT) et retourne le resultat.
 ---@param query string La requete SQL a executer.
 ---@param params table|nil Les parametres d'injection de la requete.
 ---@param func function|nil La fonction de rappel (callback) recevant les resultats de la requete.
@@ -32,7 +32,7 @@ KFramework.Server.Database.query = function(query, params, func)
     exports[GetCurrentResourceName()]:mysql_fetch_all(query, safeParameters(params), func)
 end
 
----Execute une requete SQL d'insertion (INSERT) et retourne generalement l'ID insere.
+--- (G - Core/Server) Execute une requete SQL d'insertion (INSERT) et retourne generalement l'ID insere.
 ---@param query string La requete SQL a executer.
 ---@param params table|nil Les parametres d'injection de la requete.
 ---@param func function|nil La fonction de rappel (callback) recevant l'ID de la ligne inseree.

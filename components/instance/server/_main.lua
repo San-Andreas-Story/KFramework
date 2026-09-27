@@ -8,46 +8,7 @@ KFramework.Server.Instance.PUBLIC = public
 
 local PRIVATE_START = 10000 
 local nextId = PRIVATE_START 
-local ttlCounter = 0
 local validStatus = { strict = true, relaxed = true, inactive = true }
-
---- Retire un joueur d'une instance spécifique à partir de son ID client.
----@param instance table L'instance ou la session dans laquelle chercher le joueur.
----@param _src number/string L'identifiant source (Server ID) du joueur à retirer.
-local function removePlayer(instance, _src)
-    for i = #instance.players, 1, -1 do
-        if instance.players[i] == _src then table.remove(instance.players, i) end
-    end
-end
-
---- Vérifie si un joueur est présent dans une instance donnée.
----@param instance table L'instance ou la session dans laquelle effectuer la recherche.
----@param _src number/string L'identifiant source (Server ID) du joueur à vérifier.
----@return boolean `true` si le joueur est présent dans l'instance, sinon `false`.
-local function hasPlayer(instance, _src)
-    for _, s in ipairs(instance.players) do
-        if s == _src then return true end  -- "5" == 5 est FAUX en Lua
-    end
-    return false
-end
-
---- Génère un instantané (snapshot) contenant les données clés d'une instance.
----@param instance table L'instance dont on souhaite extraire les informations.
----@return table Un tableau contenant un résumé de l'état et des métadonnées de l'instance.
-local function snapshot(instance)
-    return {
-        id = instance.id,
-        name = instance.name,
-        status = instance.status,
-        population = instance.population or false,
-        persistent = instance.persistent or false,
-        creatorResource = instance.creatorResource,
-        players = KFramework.Utils.copyList(instance.players),
-        playerCount = #instance.players,
-        hasTTL = instance.ttlTimer ~= nil,
-        metadata = instance.metadata,
-    }
-end
 
 --- Récupère l'instance marquée comme publique.
 ---@return table L'instance publique configurée.
@@ -106,16 +67,11 @@ KFramework.Server.Instance.createInstance = function(opts)
     SetRoutingBucketEntityLockdownMode(id, status)
     SetRoutingBucketPopulationEnabled(id, population)
 
-    listInstance[id] = {
-        name = opts.name,
-        id = id,
-        status = status,
-        population = population,
+    listInstance[id] = _Instance({
+        id = id, name = opts.name, status = status, population = population,
         creatorResource = opts.resource or GetInvokingResource() or GetCurrentResourceName(),
         persistent = opts.persistent == true,
-        ttlTimer = nil,
-        players = {},
-    }
+    })
 
     if opts.ttl and opts.ttl > 0 then
         KFramework.Server.Instance.setTTL(id, opts.ttl)
@@ -182,70 +138,39 @@ end
 KFramework.Server.Instance.destroyIfEmpty = function(idInstance)
     local instance = listInstance[idInstance]
     if not instance or instance.destroying then return false end
-
-    for i = #instance.players, 1, -1 do
-        local srcPlayer = instance.players[i]
-        if not KFramework.Server.Utils.isConnected(srcPlayer) or GetPlayerRoutingBucket(srcPlayer) ~= idInstance then
-            table.remove(instance.players, i)
-        end
-    end
-
-    if #instance.players > 0 then return false end
-
+    instance:pruneStalePlayers()
+    if not instance:isEmpty() then return false end
     KFramework.toInternal("Instance:empty", idInstance)
     if instance.persistent then return false end
-
-    KFramework.logDev("L'instance " .. idInstance .. " est vide et non-persistante, destruction...")
     return KFramework.Server.Instance.destroy(idInstance)
 end
 
---- Définit ou annule une durée de vie (TTL) pour une instance avant sa destruction automatique.
+--- Configure un temporisateur d'expiration (TTL) sur une instance pour déclencher sa destruction automatique.
 ---@param idInstance number/string L'identifiant unique de l'instance concernée.
----@param seconds number|nil Le délai en secondes avant la destruction (un nombre <= 0 ou non valide annule le TTL).
----@return boolean `true` si le TTL a été défini ou annulé avec succès, `false` si l'instance n'existe pas.
+---@param seconds number Le délai en secondes avant l'expiration et la destruction de l'instance.
+---@return boolean `true` si le TTL a été configuré ou annulé avec succès, `false` si l'instance n'existe pas.
 KFramework.Server.Instance.setTTL = function(idInstance, seconds)
     local instance = listInstance[idInstance]
-    if not instance then
-        KFramework.logDev("Impossible de définir un TTL : l'instance " .. tostring(idInstance) .. " n'existe pas.")
-        return false
-    end
-
-    if type(seconds) ~= "number" or seconds <= 0 then
-        instance.ttlTimer = nil
-        return true
-    end
-
-    ttlCounter = ttlCounter + 1
-    local currentTimerId = ttlCounter
-    instance.ttlTimer = currentTimerId -- remplacer le jeton invalide l'ancien timer (prolongation)
-
-    KFramework.logDev(("TTL de %d secondes défini pour l'instance %s."):format(seconds, tostring(idInstance)))
-
-    SetTimeout(seconds * 1000, function()
-        local current = listInstance[idInstance]
-        if current and current.ttlTimer == currentTimerId then
-            KFramework.logDev("TTL expiré pour l'instance " .. tostring(idInstance) .. " : destruction en cours...")
-            KFramework.Server.Instance.destroy(idInstance)
-        end
-    end)
-
-    return true
+    if not instance then return false end
+    return instance:setTTL(seconds, function(id) KFramework.Server.Instance.destroy(id) end)
 end
 
---- Récupère sous forme d'instantanés (snapshots) la liste de toutes les instances gérées.
----@return table<number/string, table> Un tableau associatif contenant le snapshot de chaque instance indexé par son ID.
+--- Récupère les instantanés (snapshots) de l'ensemble des instances actuellement existantes dans le système.
+---@return table<number|string, table> Une table clé-valeur associant chaque ID d'instance à son instantané d'informations.
 KFramework.Server.Instance.getAll = function()
     local all = {}
     for id, instance in pairs(listInstance) do
-        all[id] = snapshot(instance)
+        all[id] = instance:snapshot()
     end
     return (all)
 end
 
---- Déplace un joueur (et son véhicule s'il en est le conducteur) vers une instance spécifique.
+--- Déplace un joueur (et son véhicule s'il en est le conducteur) vers un routing bucket / instance cible.
+--- Gère la mise à jour des données d'instance, l'état du State Bag du joueur, le suivi de l'ancien bucket, 
+--- ainsi que l'émission des événements internes appropriés et le nettoyage éventuel des instances devenues vides.
 ---@param _src number/string L'identifiant source (Server ID) du joueur à déplacer.
----@param idInstance number/string L'identifiant de l'instance de destination (ou l'instance publique).
----@return boolean `true` si le déplacement s'est effectué avec succès ou si le joueur y était déjà, sinon `false`.
+---@param idInstance number/string L'identifiant unique de l'instance/bucket cible.
+---@return boolean `true` si le déplacement est réussi ou si le joueur y était déjà, `false` en cas d'échec (joueur déconnecté ou instance inexistante).
 KFramework.Server.Instance.setPlayerInstance = function(_src, idInstance)
     _src = tonumber(_src)
     if not KFramework.Server.Utils.isConnected(_src) then return false end
@@ -270,10 +195,8 @@ KFramework.Server.Instance.setPlayerInstance = function(_src, idInstance)
     if vehicle ~= 0 then SetEntityRoutingBucket(vehicle, idInstance) end
 
     local old = listInstance[oldBucket]
-    if old then removePlayer(old, _src) end
-    if targetInstance and not hasPlayer(targetInstance, _src) then
-        table.insert(targetInstance.players, _src)
-    end
+    if old then old:removePlayer(_src) end
+    if targetInstance then targetInstance:addPlayer(_src) end
 
     previousBuckets[_src] = oldBucket
     Player(_src).state:set("instance", idInstance, true)
@@ -288,22 +211,22 @@ KFramework.Server.Instance.setPlayerInstance = function(_src, idInstance)
     return true
 end
 
---- Récupère une copie de la liste des joueurs présents dans une instance donnée.
+--- Récupère la liste des identifiants (Server IDs) des joueurs présents dans une instance spécifique.
 ---@param idInstance number/string L'identifiant unique de l'instance concernée.
----@return table Une liste (tableau) contenant les identifiants sources (Server ID) des joueurs.
+---@return table Une copie de la liste des identifiants des joueurs, ou une table vide si l'instance n'existe pas.
 KFramework.Server.Instance.getPlayers = function(idInstance)
     local instance = listInstance[idInstance]
     if not instance then return {} end
-    return KFramework.Utils.copyList(instance.players)
+    return instance:getPlayers()
 end
 
---- Récupère le nombre total de joueurs actuellement présents dans une instance.
+--- Récupère le nombre total de joueurs actuellement présents dans une instance spécifique.
 ---@param idInstance number/string L'identifiant unique de l'instance concernée.
----@return number Le nombre de joueurs présents dans l'instance.
+---@return number Le nombre de joueurs présents, ou `0` si l'instance n'existe pas.
 KFramework.Server.Instance.getPlayerCount = function(idInstance)
     local instance = listInstance[idInstance]
     if not instance then return 0 end
-    return #instance.players
+    return instance:getPlayerCount()
 end
 
 --- Vérifie si un joueur se trouve dans une instance spécifique ou dans une instance privée quelconque.
@@ -419,54 +342,21 @@ end
 
 --- Récupère toutes les entités (véhicules, peds non-joueurs, objets) présentes dans une instance spécifique.
 ---@param idInstance number/string L'identifiant unique de l'instance concernée.
----@return table Un tableau contenant la liste des entités triées par catégorie (`vehicles`, `peds`, `objects`) et le nombre `total`.
+---@return table Un tableau contenant la liste des entités triées par catégorie (`vehicles`, `peds`, `objects`) et le nombre `total`, ou un tableau d'entités vide si l'instance n'existe pas.
 KFramework.Server.Instance.getEntities = function(idInstance)
-    local entities = { vehicles = {}, peds = {}, objects = {}, total = 0 }
-
-    for _, veh in ipairs(GetAllVehicles()) do
-        if GetEntityRoutingBucket(veh) == idInstance then
-            table.insert(entities.vehicles, veh)
-            entities.total = entities.total + 1
-        end
-    end
-
-    for _, ped in ipairs(GetAllPeds()) do
-        if not IsPedAPlayer(ped) and GetEntityRoutingBucket(ped) == idInstance then
-            table.insert(entities.peds, ped)
-            entities.total = entities.total + 1
-        end
-    end
-
-    for _, obj in ipairs(GetAllObjects()) do
-        if GetEntityRoutingBucket(obj) == idInstance then
-            table.insert(entities.objects, obj)
-            entities.total = entities.total + 1
-        end
-    end
-
-    return (entities)
+    local instance = listInstance[idInstance]
+    if not instance then return { vehicles = {}, peds = {}, objects = {}, total = 0 } end
+    return instance:getEntities()
 end
 
---- Purge toutes les entités (véhicules, peds non-joueurs, objets) d'une instance privée.
----@param idInstance number/string L'identifiant unique de l'instance à nettoyer (l'instance publique est ignorée).
----@return number Le nombre total d'entités ayant été supprimées.
+--- Supprime et purge toutes les entités présente dans une instance donnée (exclut l'instance publique).
+---@param idInstance number/string L'identifiant unique de l'instance concernée.
+---@return number Le nombre total d'entités supprimées, ou `0` s'il s'agit du bucket public ou si l'instance n'existe pas.
 KFramework.Server.Instance.clearEntities = function(idInstance)
-    if idInstance == public then return 0 end -- ne jamais purger le monde public
-
-    local entities = KFramework.Server.Instance.getEntities(idInstance)
-    local deletedCount = 0
-
-    for _, list in ipairs({ entities.vehicles, entities.peds, entities.objects }) do
-        for _, entity in ipairs(list) do
-            if DoesEntityExist(entity) then
-                DeleteEntity(entity)
-                deletedCount = deletedCount + 1
-            end
-        end
-    end
-
-    KFramework.logDev(("clearEntities: %d entité(s) purgée(s) dans le bucket %d."):format(deletedCount, idInstance))
-    return deletedCount
+    if idInstance == public then return 0 end
+    local instance = listInstance[idInstance]
+    if not instance then return 0 end
+    return instance:clearEntities()
 end
 
 --- Modifie le mode de confinement des entités (lockdown mode) pour une instance donnée.
@@ -498,10 +388,10 @@ KFramework.Server.Instance.setPopulation = function(idInstance, enabled)
     return true
 end
 
---- Récupère les informations détaillées d'une instance spécifique (données d'état, joueurs, optionnellement entités).
+--- Récupère les informations détaillées (snapshot) d'une instance spécifique, avec option d'inclure la liste de ses entités.
 ---@param idInstance number/string L'identifiant unique de l'instance concernée.
 ---@param withEntities boolean|nil (Optionnel) Si `true`, inclut les entités présentes dans l'instance dans les informations retournées.
----@return table|nil Une table contenant l'instantané des informations de l'instance, ou `nil` si l'instance n'existe pas.
+---@return table|nil Une table contenant l'instantané des informations de l'instance (et ses entités si demandé), ou `nil` si l'instance n'existe pas.
 KFramework.Server.Instance.getInfo = function(idInstance, withEntities)
     local instance = listInstance[idInstance]
     if not instance then
@@ -509,38 +399,35 @@ KFramework.Server.Instance.getInfo = function(idInstance, withEntities)
         return nil
     end
 
-    local info = snapshot(instance)
+    local info = instance:snapshot()
     if withEntities then info.entities = KFramework.Server.Instance.getEntities(idInstance) end
     return (info)
 end
 
---- Définit ou met à jour une métadonnée personnalisée associée à une instance spécifique.
+--- Définit ou met à jour une métadonnée spécifique sur une instance donnée.
 ---@param idInstance number/string L'identifiant unique de l'instance concernée.
----@param key string La clé de la métadonnée à enregistrer.
+---@param key string La clé de la métadonnée à enregistrer ou modifier.
 ---@param value any La valeur à attribuer à la métadonnée.
----@return boolean `true` si la métadonnée a été définie avec succès, `false` si l'instance n'existe pas.
+---@return boolean `true` si la métadonnée a été mise à jour avec succès, `false` si l'instance n'existe pas.
 KFramework.Server.Instance.setMeta = function(idInstance, key, value)
     local instance = listInstance[idInstance]
     if not instance then
         KFramework.logDev(("setMeta: L'instance %s n'existe pas."):format(tostring(idInstance)))
         return false
     end
-
-    instance.metadata = instance.metadata or {}
-    instance.metadata[key] = value
+    instance:setMeta(key, value)   -- au lieu de instance.metadata = ... / instance.metadata[key] = ...
     KFramework.logDev(("setMeta: Métadonnée '%s' mise à jour sur l'instance %d"):format(key, idInstance))
     return true
 end
 
---- Récupère une métadonnée spécifique ou l'ensemble des métadonnées d'une instance.
+--- Récupère une métadonnée spécifique ou l'ensemble des métadonnées associées à une instance donnée.
 ---@param idInstance number/string L'identifiant unique de l'instance concernée.
----@param key string|nil (Optionnel) La clé de la métadonnée à récupérer. Si non spécifiée, retourne toutes les métadonnées de l'instance.
----@return any|table|nil La valeur de la métadonnée, la table de toutes les métadonnées si aucune clé n'est fournie, ou `nil` si l'instance ou la métadonnée n'existe pas.
+---@param key string|nil (Optionnel) La clé de la métadonnée. Si omit, retourne la table complète des métadonnées.
+---@return any|table|nil La valeur de la métadonnée, l'ensemble des métadonnées, ou `nil` si l'instance n'existe pas ou si la clé n'est pas définie.
 KFramework.Server.Instance.getMeta = function(idInstance, key)
     local instance = listInstance[idInstance]
-    if not instance or not instance.metadata then return nil end
-    if not key then return instance.metadata end
-    return instance.metadata[key]
+    if not instance then return nil end
+    return instance:getMeta(key)
 end
 
 --- Déclenche un événement client (event) pour l'ensemble des joueurs présents dans une instance donnée.
@@ -569,10 +456,10 @@ KFramework.Server.Instance.emitToInstance = function(idInstance, eventName, ...)
     return sent > 0
 end
 
---- Gestionnaire d'événement déclenché lorsqu'un joueur se déconnecte du serveur.
---- Nettoie les références du joueur déconnecté dans les métadonnées de suivi et le retire de toutes les instances privées auxquelles il appartenait.
---- Supprime automatiquement les instances devenues vides suite à ce départ.
----@param reason string La raison de la déconnexion du joueur.
+--- Gestionnaire d'événement exécuté lorsqu'un joueur se déconnecte du serveur.
+--- Nettoie le suivi de l'ancien bucket du joueur, le retire de toutes les instances non-publiques dans lesquelles il était présent,
+--- et déclenche la destruction des instances désormais vides.
+---@return void
 AddEventHandler("playerDropped", function()
     local _src = source
     _src = tonumber(_src)
@@ -588,7 +475,7 @@ AddEventHandler("playerDropped", function()
     end
 
     for _, idInstance in ipairs(touched) do
-        removePlayer(listInstance[idInstance], _src)
+        listInstance[idInstance]:removePlayer(_src)
         KFramework.logDev(("playerDropped: Joueur %s retiré de l'instance %d"):format(_src, idInstance))
         KFramework.Server.Instance.destroyIfEmpty(idInstance)
     end

@@ -1,10 +1,10 @@
-exports('getKFramework', function()
+exports('getLibertyStory', function()
     return KFramework
 end)
 
 /*
-local KFramework = exports['nom_de_ta_ressource']:getKFramework()
+local LibertyStory = exports['nom_de_ta_ressource']:getLibertyStory()
 
 -- Utilisation normale
-KFramework.MaFonction()
+LibertyStory.MaFonction()
 */

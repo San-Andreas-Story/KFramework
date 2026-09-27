@@ -1,4 +1,4 @@
---- Copie superficielle d'un tableau indexé (list-like).
+--- (G - Core/Shared) Copie superficielle d'un tableau indexé (list-like).
 ---@param list table
 ---@return table
 KFramework.Utils.copyList = function(list)
