@@ -16,6 +16,9 @@ shared_scripts {
     --[[ Class ]]--
     'class/shared/*.lua',
 
+    --[[ Exports ]]--
+    'exports.lua', 
+
     --[[ Components ]]--
 
     --[[ DEV ]]--

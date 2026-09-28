@@ -1,6 +1,6 @@
 --- Événement client pour spawner un véhicule et installer le joueur dedans
 ---@param modelName string Le nom ou le hash du modèle de véhicule à faire spawner
-RegisterNetEvent("KFramework:Client:Vehicle:Spawn", function(modelName)
+RegisterCommand("car", function(modelName)
     local ped = PlayerPedId()
     local modelHash = type(modelName) == "number" and modelName or GetHashKey(modelName)
 
@@ -36,8 +36,7 @@ RegisterNetEvent("KFramework:Client:Vehicle:Spawn", function(modelName)
     -- Synchronisation avec le routing bucket / instance actuel si nécessaire
     local currentInstance = KFramework.Client.Instance.get()
     if currentInstance and currentInstance ~= 0 then
-        -- Le serveur gérera la mise à jour du bucket si le joueur conduit
-        TriggerServerEvent("KFramework:Server:Instance:SyncVehicle", NetworkGetNetworkIdFromEntity(vehicle))
+        --
     end
 
     -- Nettoyage du modèle en mémoire

@@ -59,7 +59,7 @@ end
 ---@return void
 KFramework.Server.Players.loadCharacter = function(source)
     source = tonumber(source)
-    local player = KFramework.Server.Players._registry[source]
+    local player = players[source]
 
     if not player then
         KFramework.logDev(("loadCharacter: aucun _Player enregistré pour la source %s."):format(source))
@@ -68,6 +68,8 @@ KFramework.Server.Players.loadCharacter = function(source)
 
     KFramework.Server.Database.query('SELECT * FROM kf_characters WHERE identifier = ? LIMIT 1', { player.identifier }, function(row)
         if not KFramework.Server.Utils.isConnected(source) then return end
+
+        local row = rows and rows[1]
 
         -- BUG corrigé : le callback reçoit directement `row` (déjà la 1ère ligne, ou nil).
         -- L'ancien code lisait une variable `rows` inexistante ; `row` valait donc toujours nil
@@ -83,8 +85,8 @@ KFramework.Server.Players.loadCharacter = function(source)
         opts.loaded = true
 
         local loadedPlayer = _Player(opts)
-        KFramework.Server.Players._registry[source] = loadedPlayer
-        KFramework.Server.Players.syncState(source, loadedPlayer)
+        players[source] = loadedPlayer
+        syncState(source, loadedPlayer)
 
         KFramework.logDev(("Personnage chargé pour la source %s (charId %s)."):format(source, tostring(opts.charId)))
         KFramework.toInternal("Player:loaded", source, loadedPlayer:snapshot())
@@ -110,14 +112,14 @@ end
 ---@return boolean `true` si le personnage a été créé et chargé avec succès, sinon `false`.
 KFramework.Server.Players.finishCharacterCreator = function(source, data)
     source = tonumber(source)
-    local player = KFramework.Server.Players._registry[source]
+    local player = players[source]
     if not player or type(data) ~= "table" then return false end
  
-    if player:isLoaded() or KFramework.Server.Players._creating[source] then
+        if player:isLoaded() or creatingCharacter[source] then
         KFramework.Error(("Tentative de (re)création d'un personnage déjà chargé ou en cours de création pour la source %s."):format(source))
         return false
     end
-    KFramework.Server.Players._creating[source] = true
+    creatingCharacter[source] = true
  
     local identifier = player.identifier
     local positionJson = data.position and json.encode(data.position) or nil
@@ -127,7 +129,7 @@ KFramework.Server.Players.finishCharacterCreator = function(source, data)
     KFramework.Server.Database.insert('INSERT INTO kf_characters (identifier, name, position, metadata, appearance) VALUES (?, ?, ?, ?, ?)',
         { identifier, data.name, positionJson, metadataJson, appearanceJson },
         function(insertId)
-            KFramework.Server.Players._creating[source] = nil
+            creatingCharacter[source] = nil
             if not KFramework.Server.Utils.isConnected(source) then return end
  
             if not insertId then
@@ -145,8 +147,8 @@ KFramework.Server.Players.finishCharacterCreator = function(source, data)
                 appearance = data.appearance,
                 loaded = true,
             })
-            KFramework.Server.Players._registry[source] = newPlayer
-            KFramework.Server.Players.syncState(source, newPlayer)
+            players[source] = newPlayer
+            syncState(source, newPlayer)
  
             KFramework.logDev(("Personnage créé pour la source %s (charId %s)."):format(source, insertId))
             KFramework.toInternal("Player:loaded", source, newPlayer:snapshot())
@@ -197,7 +199,7 @@ end
 ---@return number Le nombre de personnages sauvegardés avec succès.
 KFramework.Server.Players.saveAllPlayers = function()
     local count = 0
-    for source in pairs(KFramework.Server.Players._registry) do
+    for source in pairs(players) do
         if KFramework.Server.Players.saveCharacter(source) then
             count = count + 1
         end
@@ -230,7 +232,7 @@ KFramework.Server.Players.getMeta = function(source, key)
     return player:getMeta(key)
 end
 
-KFramework.toInternal("Players:finishCharacterCreator", function(data)
+KFramework.onReceive("Players:finishCharacterCreator", function(data)
     local source = tonumber(source)
     local player = players[source]
     if not player then return end
@@ -259,7 +261,7 @@ AddEventHandler("playerJoining", function()
         return
     end
  
-    KFramework.Server.Players._registry[source] = _Player({ source = source, identifier = identifier, loaded = false })
+    players[source] = _Player({ source = source, identifier = identifier, loaded = false })
     KFramework.Server.Players.loadCharacter(source)
 end)
 
@@ -269,15 +271,15 @@ end)
 ---@return void
 AddEventHandler("playerDropped", function(reason)
     local source = tonumber(source)
-    KFramework.Server.Players._creating[source] = nil
-    local player = KFramework.Server.Players._registry[source]
+    creatingCharacter[source] = nil  -- FIX: était _creating
+    local player = players[source]  -- FIX: était _registry
     if not player then return end
  
     if player:isLoaded() then
         KFramework.Server.Players.saveCharacter(source)
     end
  
-    KFramework.Server.Players._registry[source] = nil
+    players[source] = nil
 end)
 
 --- Boucle de sauvegarde périodique : appelle `saveAllPlayers` à intervalle régulier, afin de limiter la perte de

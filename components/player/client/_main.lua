@@ -3,6 +3,18 @@ KFramework.Client.Players = {}
 local currentCharacter = LocalPlayer.state.character
 local characterCallbacks = {}
 
+--- État interne du character creator (n'existe que pendant qu'il est ouvert).
+local creator = {
+    open = false,
+    ped = nil,
+    cam = nil,
+    catalog = nil,
+    state = nil,
+    sex = "m",
+    view = "face",   -- "face" | "body"
+    angle = 0.0,
+}
+
 --- Récupère l'état actuel du personnage du joueur local (depuis le state bag synchronisé par le serveur).
 ---@return table|nil Une table représentant l'état du personnage local, ou `nil` si aucun personnage n'est encore chargé.
 KFramework.Client.Players.get = function()
@@ -111,7 +123,7 @@ KFramework.Client.Players.getMeta = function(key)
     return character.metadata[key]
 end
 
-KFramework.toInternal("Player:openCharacterCreator", function(data)
+KFramework.onReceive("Player:openCharacterCreator", function(data)
     KFramework.Client.Players.openCharacterCreator(data or {})
 end)
 
